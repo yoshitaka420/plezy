@@ -68,8 +68,10 @@ import '../providers/shader_provider.dart';
 import '../providers/user_profile_provider.dart';
 import '../utils/app_logger.dart';
 import '../utils/dialogs.dart';
+import '../utils/download_version_utils.dart';
 import '../utils/log_redaction_manager.dart';
 import '../utils/live_tv_player_navigation.dart';
+import '../utils/media_server_http_client.dart' show AbortController;
 import '../utils/player_utils.dart';
 import '../utils/orientation_helper.dart';
 import '../utils/platform_detector.dart';
@@ -82,6 +84,7 @@ import 'video_player/frame_rate_matcher.dart';
 import 'video_player/live_stream_retry.dart';
 import 'video_player/live_tv_session_args.dart';
 import 'video_player/live_tv_session_state.dart';
+import 'video_player/stream_error_classifier.dart';
 import 'video_player/tv_background_suspend_policy.dart';
 import 'video_player/widgets/player_prompt_overlays.dart';
 import '../widgets/overlay_sheet.dart';
@@ -318,6 +321,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   // existing read sites.
   PlaybackSession? _playbackSession;
   int _playbackGeneration = 0;
+  AbortController? _playbackResolveAbort;
   // Fired in parallel with MPV setup so the OS audio-focus negotiation
   // (~90ms on Android) doesn't sit on the critical path. Awaited before
   // `player.open()` so the semantics are unchanged — we just eat the cost
@@ -528,6 +532,13 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   int _beginPlaybackGeneration({bool isMediaReload = false}) {
     if (!isMediaReload) _playbackTransition = _PlaybackTransition.idle;
     return ++_playbackGeneration;
+  }
+
+  AbortController _replacePlaybackResolveAbort() {
+    _playbackResolveAbort?.abort();
+    final controller = AbortController();
+    _playbackResolveAbort = controller;
+    return controller;
   }
 
   /// Start a new playback attempt: bumps the generation and captures the
@@ -812,6 +823,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
           serverManager: context.read<MultiServerProvider>().serverManager,
           database: context.read<AppDatabase>(),
         );
+        final resolveAbort = _replacePlaybackResolveAbort();
         _playbackDataFuture = playbackResolver.resolve(
           metadata: _currentMetadata,
           selectedMediaIndex: _effectiveSelectedMediaIndex,
@@ -822,6 +834,7 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
           selectedAudioStreamId: _selectedAudioStreamId,
           sessionIdentifier: _playbackSessionIdentifier,
           transcodeSessionId: _playbackTranscodeSessionId,
+          abort: resolveAbort,
         );
         // If MPV setup below throws before `_startPlayback` awaits this,
         // tell Dart we've "handled" the future so it's not reported as an
@@ -1215,6 +1228,8 @@ class VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindin
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _playbackResolveAbort?.abort();
+    _playbackResolveAbort = null;
 
     _cleanupCompanionRemoteCallbacks();
 

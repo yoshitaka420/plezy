@@ -15,6 +15,7 @@ import '../mpv/models.dart';
 import '../utils/app_logger.dart';
 import '../utils/downloaded_version_match.dart';
 import '../utils/global_key_utils.dart';
+import '../utils/media_server_http_client.dart' show AbortController;
 import 'cached_playback_metadata_service.dart';
 import 'download_storage_service.dart';
 import 'playback_initialization_types.dart';
@@ -161,6 +162,7 @@ class PlaybackInitializationService {
     int? selectedAudioStreamId,
     String? sessionIdentifier,
     String? transcodeSessionId,
+    AbortController? abort,
   }) async {
     final serverId = metadata.serverId ?? client?.serverId;
 
@@ -206,6 +208,7 @@ class PlaybackInitializationService {
           selectedAudioStreamId: selectedAudioStreamId,
           sessionIdentifier: sessionIdentifier,
           transcodeSessionId: transcodeSessionId,
+          abort: abort,
         ),
       );
     } catch (e) {
